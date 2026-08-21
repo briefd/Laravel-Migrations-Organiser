@@ -7,20 +7,54 @@ on:
   pull_request:
 
 jobs:
-  build:
+  lint:
+    runs-on: ubuntu-latest
+    name: Pint
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.3
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-interaction
+
+      - name: Run Pint
+        run: vendor/bin/pint
+
+      - name: Commit fixes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: Fix code style (Laravel Pint)
+
+  test:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: true
       matrix:
-        php: [7.3, 7.4, 8.0, 8.1]
+        include:
+          - { php: 8.2, laravel: '11.*', testbench: '9.*' }
+          - { php: 8.3, laravel: '11.*', testbench: '9.*' }
+          - { php: 8.4, laravel: '11.*', testbench: '9.*' }
+          - { php: 8.2, laravel: '12.*', testbench: '10.*' }
+          - { php: 8.3, laravel: '12.*', testbench: '10.*' }
+          - { php: 8.4, laravel: '12.*', testbench: '10.*' }
+          - { php: 8.3, laravel: '13.*', testbench: '11.*' }
+          - { php: 8.4, laravel: '13.*', testbench: '11.*' }
 
-    name: PHP:${{ matrix.php }}
+    name: PHP:${{ matrix.php }} / Laravel:${{ matrix.laravel }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
-      - name: Setup PHP, with composer
+      - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
@@ -29,19 +63,20 @@ jobs:
 
       - name: Get composer cache directory
         id: composer-cache
-        run: echo "::set-output name=dir::$(composer config cache-files-dir)"
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
 
       - name: Cache composer dependencies
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
-          key: dependencies-php-${{ matrix.php }}-composer-${{ hashFiles('composer.json') }}
-          restore-keys: dependencies-php-${{ matrix.php }}-composer-
+          key: dependencies-php-${{ matrix.php }}-laravel-${{ matrix.laravel }}-composer-${{ hashFiles('composer.json') }}
+          restore-keys: dependencies-php-${{ matrix.php }}-laravel-${{ matrix.laravel }}-composer-
+
+      - name: Install Laravel ${{ matrix.laravel }} with Testbench ${{ matrix.testbench }}
+        run: composer require "illuminate/support:${{ matrix.laravel }}" "illuminate/database:${{ matrix.laravel }}" "illuminate/filesystem:${{ matrix.laravel }}" "illuminate/console:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" --no-update
 
       - name: Install Composer dependencies
-        run: |
-          composer install --prefer-dist --no-interaction --no-suggest
+        run: composer install --prefer-dist --no-interaction
 
       - name: Run Unit tests
-        run: |
-          vendor/bin/phpunit --coverage-clover=tests/logs/clover.xml
+        run: vendor/bin/phpunit
